@@ -179,7 +179,7 @@ function lullabot_edit_article_lullabot_edit_exporter_node_article($node, $outpu
         <section>
           <section data-background="images/couchdb-home.png">
             <div style="background-color: rgba(0, 0, 0, 0.9); color: #fff; padding: 20px;">
-              <h2>The middleware</h2>
+              <h2>The front end's database</h2>
             </div>
           </section>
 
@@ -685,28 +685,59 @@ app.use('/mailchimp-signup', function(req, res) {
         </section>
 
         <section>
-          <section>
-            <h1>Deployments</h1>
+          <section data-background="images/jenkins.png">
+            <div style="background-color: rgba(0, 0, 0, 0.9); color: #fff; padding: 20px;">
+              <h2>Jenkins Jobs</h2>
+            </div>
           </section>
 
           <section>
-            <h1>Jenkins job for back end</h1>
+            <h2>Back end deployment</h2>
             <pre>
               <code>
-                Check out tag.
-                make (updb, fra, cc all).
+# First update the old lullabot.com.
+cd /var/www/lullabot.com-legacy/docroot
+git pull
+drush -y sql-sync @www_lullabot_com @self
+drush -y -v rsync @www_lullabot_com:%files/ @self:%files --update
+
+# Then update edit.lullabot.com and run the migration.
+cd /var/www/edit.lullabot.com
+git fetch
+git checkout $GIT_TAG
+make
+make migrateify
+echo $GIT_TAG > docroot/version.txt
               </code>
             </pre>
           </section>
 
           <section>
-            <h1>Jenkins job for front end</h1>
+            <h2>Front end deployment</h2>
+            <p>First, install dependencies:</p>
             <pre>
               <code>
-                1. Check out to release directory.
-                2. make (npm install, bower install, grunt).
-                3. Replace symlink to web root.
-                4. Restart NodeJS application.
+# Checks out the repository to a numbered directory. Then builds the project dependencies.
+mv $WORKSPACE/release $WORKSPACE/$BUILD_NUMBER
+cd $WORKSPACE/$BUILD_NUMBER
+make
+              </code>
+            </pre>
+          </section>
+
+          <section>
+            <h2>Front end deployment (2)</h2>
+            <p>Then, update symlink:</p>
+            <pre>
+              <code>
+# Point webroot to the new release through a symlink.
+cd /var/www/
+ln -s $WORKSPACE/$BUILD_NUMBER www.lullabot.com_tmp
+mv -Tf www.lullabot.com_tmp www.lullabot.com
+echo $GIT_TAG > www.lullabot.com/version.txt
+
+# Restart the Node.js application.
+sudo service lullabot.com-www restart
               </code>
             </pre>
           </section>
@@ -725,7 +756,9 @@ app.use('/mailchimp-signup', function(req, res) {
         <section>
           <h2>Useful links</h2>
           <ul>
-            <li><a href="" target="_blank"></a></li>
+            <li><a href="https://facebook.github.io/react/" target="_blank">React Docs</a></li>
+            <li><a href="http://docs.couchdb.org/en/1.6.1/" target="_blank"> Docs</a></li>
+            <li><a href="http://isomorphic.net" target="_blank">Isomorphic libraries</a></li>
           </ul>
         </section>
         <section>
