@@ -1,0 +1,777 @@
+<!doctype html>
+<html lang="en">
+
+  <head>
+    <meta charset="utf-8">
+
+    <title>Decoupling the CMS with React and CouchDB</title>
+
+    <meta name="description" content="Let Drupal do what it does best: manage content.">
+
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, minimal-ui">
+
+    <link rel="stylesheet" href="css/reveal.css">
+    <link rel="stylesheet" href="css/theme/black.css" id="theme">
+
+    <!-- Code syntax highlighting -->
+    <link rel="stylesheet" href="lib/css/zenburn.css">
+
+    <!-- Printing and PDF exports -->
+    <script>
+      var link = document.createElement( 'link' );
+      link.rel = 'stylesheet';
+      link.type = 'text/css';
+      link.href = window.location.search.match( /print-pdf/gi ) ? 'css/print/pdf.css' : 'css/print/paper.css';
+      document.getElementsByTagName( 'head' )[0].appendChild( link );
+    </script>
+
+    <!--[if lt IE 9]>
+    <script src="lib/js/html5shiv.js"></script>
+    <![endif]-->
+  </head>
+
+  <body>
+
+    <div class="reveal">
+
+      <!-- Any section element inside of this container is displayed as a slide -->
+      <div class="slides">
+        <section>
+          <h1>Decoupling the CMS with React and CouchDB</h1>
+          <h3>DrupalCamp Spain 2015</h3>
+          <p>Juampy NR</p>
+        </section>
+
+        <section>
+          <img align="left" src="images/Juampy-headshot.jpg" width="200"/>
+          <img align="right" src="images/lullabot.jpg" width="200"/>
+          Juampy NR - <a href="https://twitter.com/juampynr" target="_blank">@juampynr</a><br>
+          <br>
+          Back end developer<br>
+          <br>
+          <a href="http://about.me/juampynr" target="_blank">about.me/juampynr</a>
+        </section>
+
+        <section data-background-video="video/video.mp4" data-background-color="#000000">
+          <div style="background-color: rgba(0, 0, 0, 0.9); color: #fff; padding: 20px;">
+            <h2>The website</h2>
+          </div>
+        </section>
+
+        <section data-background="images/syfy-case.png">
+          <div style="background-color: rgba(0, 0, 0, 0.9); color: #fff; padding: 20px;">
+            <h2>The goal</h2>
+            <p>Give the design and front end teams freedom to design and structure the website without the constraints of a CMS</p>
+          </div>
+        </section>
+
+        <section data-background="images/couchdb.png">
+          <div style="background-color: rgba(0, 0, 0, 0.9); color: #fff; padding: 20px;">
+            <h2>The project</h2>
+            <ul>
+              <li>Drupal serves just as a CMS.</li>
+              <li>Data is exported to CouchDB on cron run.</li>
+              <li>The front end is an isomorphic application.</li>
+              <li>The front end fetches data through CouchDB's REST API.</li>
+              <li>Only anonymous navigation in the front end.</li>
+            </ul>
+          </div>
+        </section>
+
+        <section>
+          <section data-background="images/login.png">
+            <div style="background-color: rgba(0, 0, 0, 0.9); color: #fff; padding: 20px;">
+              <h2>The back end</h2>
+            </div>
+          </section>
+
+          <section data-background="images/article-form.png">
+          </section>
+
+          <section>
+            <h2>Exporting data via Queue API</h2>
+            <pre>
+              <code class="console">
+$ drush queue-list
+ Queue                                   Items  Class       
+ file_entity_type_determine              0      SystemQueue 
+ lullabot_edit_exporter_nodes            1      SystemQueue 
+ lullabot_edit_exporter_views            0      SystemQueue 
+ lullabot_edit_exporter_lanyrd           0      SystemQueue 
+ lullabot_edit_exporter_latest_articles  0      SystemQueue 
+ lullabot_edit_exporter_weather          0      SystemQueue 
+
+$ drush queue-run lullabot_edit_exporter_nodes
+              </code>
+            </pre>
+          </section>
+
+          <section>
+            <h2>Queue Processing</h2>
+            <pre>
+              <code class="php" style="max-height:600px;width:115%">
+function _lullabot_edit_exporter_nodes_run($nid) {
+  $sag = _lullabot_edit_exporter_get_couchdb_handler();
+  // ...
+  switch ($result['op']) {
+    case 'update':
+      $node = node_load($nid);
+      if ($node) {
+        $output = new stdClass();
+        $output->_id = $node->uuid;
+
+        // Allow other modules to determine the output class structure.
+        module_invoke_all('lullabot_edit_exporter_node_' . $node->type, $node, $output);
+        module_invoke_all('lullabot_edit_exporter_node', $node, $output);
+
+        // Insert/Update the node into couchdb.
+        try {
+          if ($sag->put($output->_id, $output)->body->ok) {
+            $success = TRUE;
+          }
+        }
+        catch (Exception $e) {
+          watchdog('lullabot_edit_exporter', $e->getMessage(), array(), WATCHDOG_WARNING);
+        }
+  // ...
+}
+              </code>
+            </pre>
+          </section>
+
+          <section>
+            <h2>Node formatting for CouchDB</h2>
+            <pre>
+              <code class="php" style="max-height:600px;width:115%">
+function lullabot_edit_article_lullabot_edit_exporter_node_article($node, $output) {
+  $node_wrapper = entity_metadata_wrapper('node', $node);
+  $output->nid = $node->nid;
+  $output->type = $node->type;
+  $output->title = $node->title;
+  $output->published = $node->created;
+  $output->full_slug = _lullabot_edit_shared_fields_get_full_slug($node);
+  $output->full_slug_flat = _lullabot_edit_shared_fields_get_flat_slug($output->full_slug);
+  $output->legacy_nid = $node_wrapper->field_legacy_nid->value();
+  $output->deck = _lullabot_edit_exporter_filter_xss($node_wrapper->field_deck->raw());
+  $output->body = array(
+    'value' => $node_wrapper->body->value() ? $node_wrapper->body->value->value() : NULL,
+    'format' => $node_wrapper->body->value() ? $node_wrapper->body->format->value() : NULL,
+  );
+
+  $output->related_links = array();
+  foreach ($node_wrapper->field_related_links->getIterator() as $delta => $item_wrapper) {
+    $output->related_links[] = array(
+      'url' => $item_wrapper->url->value(),
+      'title' => $item_wrapper->title->value(),
+    );
+  }
+
+  // ...
+}
+              </code>
+            </pre>
+          </section>
+        </section>
+
+        <section>
+          <section data-background="images/couchdb-home.png">
+            <div style="background-color: rgba(0, 0, 0, 0.9); color: #fff; padding: 20px;">
+              <h2>The middleware</h2>
+            </div>
+          </section>
+
+          <section data-background="images/couchdb-article.png">
+            <div style="background-color: rgba(0, 0, 0, 0.9); color: #fff; padding: 20px;">
+              <h2>CouchDB's interface</h2>
+            </div>
+          </section>
+
+          <section data-background="images/couchdb-by_slug.png">
+            <div style="background-color: rgba(0, 0, 0, 0.9); color: #fff; padding: 20px;">
+              <h2>CouchDB's API</h2>
+            </div>
+          </section>
+        </section>
+
+        <section>
+          <section data-background="images/article-front.png">
+            <div style="background-color: rgba(0, 0, 0, 0.9); color: #fff; padding: 20px;">
+              <h2>The front end</h2>
+            </div>
+          </section>
+
+          <section>
+            <h2>The article template</h2>
+            <pre>
+              <code class="javascript">
+'use strict';
+var React = require('react');
+var Settings = require('../../../settings');
+var Header = require('../component/header.jsx');
+var ArticleHero = require('../component/article/hero.jsx');
+var RichText = require('../component/rich-text.jsx');
+var Link = require('../link.jsx');
+var SeriesList = require('../component/series-list.jsx');
+var TopicList = require('../component/topic-list.jsx');
+var TeaserAuthor = require('../component/teaser/author.jsx');
+var Comments = require('../component/comments.jsx');
+var PouchDB = require('pouchdb');
+var LegacyMixin = require('../mixin/legacy.jsx');
+var PromoNewsletter = require('../component/promo/newsletter.jsx');
+var PromoBecomeBotYourProject = require('../component/promo/become-bot-your-project.jsx');
+var PromoRotator = require('../component/promo-rotator.jsx');
+var PromosMixin = require('../mixin/promos.jsx');
+
+var LayoutArticle = React.createClass({
+  mixins: [LegacyMixin, PromosMixin],
+  getSplitBody: function() {
+    // ...
+  },
+  getBackground: function() {
+    // ...
+  },
+  getTopics: function() {
+    var topics = [];
+    if (this.props.doc.topics && this.props.doc.topics.length) {
+      this.props.doc.topics.map(function(topic) {
+        topics.push({
+          title: topic.title,
+          link: topic.full_slug_flat
+        });
+      });
+    }
+
+    return topics;
+  },
+  getSeriesData: function(callback) {
+    // ...
+  },
+  getSeries: function() {
+    // ...
+  },
+  getInitialState: function() {
+    return {
+      series: []
+    };
+  },
+  componentDidMount: function() {
+    this.getSeries();
+  },
+  propTypes: {
+    doc: React.PropTypes.object.isRequired
+  },
+  getDefaultProps: function() {
+    return {
+      doc: {}
+    };
+  },
+  render: function() {
+    var body = this.getSplitBody();
+
+    // Get an array of active authors to display in the author teaser.
+    // We ignore the inactive authors.
+    var activeAuthors = [];
+    this.props.doc.authors.map(function(author) {
+      if (author.active) {
+       activeAuthors.push(author);
+      }
+    });
+
+    return (
+      <div className="layout-article" itemScope="" itemType="http://schema.org/Article">
+        <Header />
+        <article className="layout-article__article">
+
+          <div className="layout-article__article-hero">
+            <ArticleHero authors={this.props.doc.authors} background={this.getBackground()} date={this.props.doc.published} title={this.props.doc.title} />
+          </div>
+
+          <div className="layout-article__article-content">
+            <div className="layout-article__article-content-lead">
+              <RichText assets={this.props.doc.assets} value={body.lead} />
+            </div>
+
+            <For each="series" of={this.state.series}>
+              <SeriesList items={series.items} key={series.id} link={series.link} title={series.title} />
+            </For>
+
+            <div className="layout-article__article-content-body">
+              <RichText assets={this.props.doc.assets} value={body.body} />
+            </div>
+          </div>
+
+          <div className="u-layout-container">
+            <div className="u-layout-content-grid">
+              <If condition={this.props.doc.topics && this.props.doc.topics.length}>
+                <div className="layout-article__article-topics">
+                  <TopicList topics={this.getTopics()} />
+                </div>
+              </If>
+
+              <If condition={this.props.doc.related_links && this.props.doc.related_links.length}>
+                <div className="layout-article__article-related">
+                  If you enjoyed this article, you may also enjoy...
+                  <ul>
+                    <For each="link" of={this.props.doc.related_links}>
+                      <li key={link.url}><Link to={link.url}>{link.title}</Link></li>
+                    </For>
+                  </ul>
+                </div>
+              </If>
+
+              <If condition={activeAuthors.length}>
+                <div className="layout-article__article-authors">
+                  <For each="author" of={activeAuthors}>
+                    <TeaserAuthor active={author.active} image={author.image.uri} key={author._id} link={author.full_slug_flat} name={author.title} shortBio={author.deck} />
+                  </For>
+                </div>
+              </If>
+            </div>
+          </div>
+        </article>
+
+        <div className="u-layout-container">
+          <div className="u-layout-content-grid">
+            <div className="layout-article__comments">
+              Join the conversation
+              <Comments identifier={this.legacyGetCanonicalPath()} />
+            </div>
+          </div>
+        </div>
+
+        <div className="layout-article__promos">
+          <PromoBecomeBotYourProject />
+          <PromoNewsletter />
+        </div>
+        <div className="layout-article__reveal-promos">
+          <PromoRotator promos={this.promosFromNames([
+            'bravotv',
+            'msnbc',
+            'namm',
+            'syfy'
+          ])} />
+        </div>
+      </div>
+    );
+  }
+});
+
+module.exports = LayoutArticle;
+              </code>
+            </pre>
+          </section>
+
+          <section data-background="images/menu.png">
+            <div style="background-color: rgba(0, 0, 0, 0.9); color: #fff; padding: 20px;">
+              <h2>The navigation menu</h2>
+            </div>
+          </section>
+
+          <section>
+            <h2>The menu template</h2>
+            <pre>
+              <code class="javascript">
+'use strict';
+var React = require('react');
+var SiteName = require('./site-name.jsx');
+var Icon = require('./icon.jsx');
+var Link = require('../link.jsx');
+var SocialLinks = require('./social-links.jsx');
+var ClassesMixin = require('../mixin/classes.jsx');
+var MixinSvgClickFix = require('../mixin/svg-click-fix.jsx');
+
+var Navigation = React.createClass({
+  mixins: [ClassesMixin, MixinSvgClickFix],
+  contextTypes: {
+    router: React.PropTypes.func.isRequired
+  },
+  getNavItems: function() {
+    var navItems = [
+      {title: 'Home', link: '/'},
+      {title: 'Our Work', link: 'our-work'},
+      {title: 'Who We Are', link: 'who-we-are'},
+      {title: 'What We Do', link: 'what-we-do'},
+      {title: 'Articles', link: 'articles'}
+    ];
+
+    return navItems;
+  },
+  navToggleClick: function() {
+    this.setState({
+      open: !this.state.open
+    });
+    this.classesToggle(document.body, 'is-navigation-open');
+  },
+  getClasses: function() {
+    var classes = 'navigation__main';
+    if (this.state.open) {
+      classes += ' is-open';
+    }
+
+    return classes;
+  },
+  handleSearchSubmit: function(e) {
+    e.preventDefault();
+    this.navToggleClick();
+    var searchString = React.findDOMNode(this.refs.searchString).value;
+    this.context.router.transitionTo('/search', {}, {q: searchString});
+  },
+  propTypes: {
+    exposeSearch: React.PropTypes.bool,
+    wordmark: React.PropTypes.bool
+  },
+  getDefaultProps: function() {
+    return {
+      exposeSearch: false,
+      wordmark: false
+    };
+  },
+  getInitialState: function() {
+    return {
+      open: false,
+      showCta: false
+    };
+  },
+  componentWillUnmount: function() {
+    this.classesRemove(document.body, 'is-navigation-open');
+  },
+  render: function() {
+    return (
+      <nav className="navigation">
+        <div className="navigation__header">
+          <If condition={this.state.showCta}>
+            <div className="navigation__header__ctas">
+              <Link to="" type="cta-nav"><Icon icon="comments" sprite="interactive.svg" title="Comment" />
+  Comment</Link>
+            </div>
+          </If>
+          <If condition={this.props.exposeSearch}>
+            <form action="/search" onSubmit={this.handleSearchSubmit}>
+              <input className="u-search-input navigation__search-input" name="q" placeholder="Search" ref="searchString" type="text" />
+            </form>
+          </If>
+          <div className="navigation__branding">
+            <a href="#" onClick={this.navToggleClick} >
+              <If condition={this.props.wordmark}>
+                <SiteName />
+              </If>
+              <Icon icon="hamburger" sprite="interactive.svg" title="Open navigation" />
+            </a>
+          </div>
+        </div>
+
+        <div className={this.getClasses()}>
+          <form action="/search" onSubmit={this.handleSearchSubmit}>
+            <input className="u-search-input navigation__search-input" name="q" placeholder="Search" ref="searchString" type="text" />
+          </form>
+          <a href="#" onClick={this.navToggleClick} >
+            <Icon icon="close" sprite="interactive.svg" title="Close navigation" />
+          </a>
+          <ul className="navigation__primary-menu">
+            <For each="navItem" of={this.getNavItems()}>
+              <li className="navigation__primary-menu__item" key={navItem.title}>
+                <Link to={navItem.link}>
+                  {navItem.title}
+                </Link>
+              </li>
+            </For>
+          </ul>
+          <div className="navigation__ctas">
+            <span className="navigation__ctas__cta"><Link to="jobs">Careers</Link></span>
+            <span className="navigation__ctas__cta"><Link to="contact">Contact</Link></span>
+          </div>
+          <div className="navigation__social-links">
+            <SocialLinks />
+          </div>
+          <div className="navigation__dme-promo">
+            <span className="navigation__dme-promo__label">
+              We also created
+            </span>
+            <Link to="https://drupalize.me">Drupalize.Me<Icon icon="arrow-right" sprite="interactive.svg" title="Drupalize.Me" /></Link>
+          </div>
+        </div>
+      </nav>
+    );
+  }
+});
+
+module.exports = Navigation;
+
+              </code>
+            </pre>
+          </section>
+
+          <section data-background="images/contact-form.png">
+            <div style="background-color: rgba(0, 0, 0, 0.9); color: #fff; padding: 20px;">
+              <h2>Forms</h2>
+            </div>
+          </section>
+
+          <section data-background="images/newsletter.png">
+            <div style="background-color: rgba(0, 0, 0, 0.9); color: #fff; padding: 20px;">
+              <h2>The newsletter widget</h2>
+            </div>
+          </section>
+
+          <section>
+            <h2>Client side template</h2>
+            <pre>
+              <code class="javascript">
+'use strict';
+var React = require('react');
+var Icon = require('./../icon.jsx');
+
+var PromoNewsletter = React.createClass({
+  propTypes: {
+  },
+  getInitialState: function() {
+    return {
+      sending: false,
+      status: null,
+      tryAgain: false
+    };
+  },
+  tryAgain: function (event) {
+    event.preventDefault();
+    this.setState({sending: false, status: '', tryAgain: false});
+  },
+  componentDidUpdate: function() {
+    // Restore previously entered email after updating state.
+    if (this.email && this.refs.email) {
+      React.findDOMNode(this.refs.email).value = this.email;
+    }
+  },
+  handleSubmit: function (event) {
+    event.preventDefault();
+    // Simulate Mailchimp's anti-spam filter.
+    if (React.findDOMNode(this.refs.filter).value !== '') {
+      return;
+    }
+
+    // Spam field is empty. Proceed to emN2
+    this.email = React.findDOMNode(this.refs.email).value;
+    if (this.email) {
+      var url = '/mailchimp-signup';
+      this.setState({sending: true, status: '', tryAgain: false});
+      var xmlhttp = new XMLHttpRequest();
+      var _this = this;
+      // Handle network errors.
+      xmlhttp.onerror = function() {
+        _this.setState({sending: false, status: 'Sorry, there has been a network error', tryAgain: true});
+      };
+      xmlhttp.onreadystatechange = function() {
+        if (xmlhttp.readyState === 4) {
+          _this.setState({sending: false, status: '', tryAgain: false});
+          var response = JSON.parse(xmlhttp.responseText);
+          if (xmlhttp.status === 200) {
+            // Evaluate response and update status.
+            if (!response.error) {
+              _this.setState({sending: false, status: 'Success! Check your email for confirmation', tryAgain: false});
+            }
+            else {
+              switch (response.name) {
+                // Server errors.
+                case 'List_DoesNotExist':
+                case 'Invalid_ApiKey':
+                case 'User_InvalidRole':
+                  _this.setState({sending: false, status: 'Oops, there is something wrong on our side. Please try again later', tryAgain: false});
+                  break;
+                // Client errors.
+                case 'Email_NotExists':
+                case 'List_AlreadySubscribed':
+                case 'List_InvalidImport':
+                case 'User_Disabled':
+                case 'Too_Many_Connections':
+                case 'User_UnderMaintenance':
+                case 'User_InvalidAction':
+                case 'ValidationError':
+                default:
+                  _this.setState({sending: false, status: response.error, tryAgain: true});
+                  break;
+              }
+            }
+          }
+          else {
+            // Handle server errors.
+            _this.setState({sending: false, status: 'Oops, there is something wrong on our side. Please try again later', tryAgain: false});
+          }
+        }
+      };
+      xmlhttp.open('POST', url, true);
+      xmlhttp.setRequestHeader('Content-type', 'application/x-www-form-urlencoded');
+      xmlhttp.send('email=' + encodeURIComponent(this.email));
+    }
+  },
+  render: function() {
+    return (
+      <div className="promo-newsletter">
+        <div className="promo-newsletter__inner">
+          <div className="promo-newsletter__bot-icon"><Icon icon="newsletter-bot" sprite="promo.svg" title="Newsletter bot" /></div>
+          <div className="promo-newsletter__text"><strong>Sign up for the Lullabot Newsletter</strong> and get our latest articles and more direct to your inbox</div>
+          <div className="promo-newsletter__form">
+            <form action="" name="mc-embedded-subscribe-form" noValidate onSubmit={this.handleSubmit}>
+              <div>
+                <If condition={this.state.status}>
+                  <div className="promo-newsletter__message">
+                    <span>{this.state.status}</span>
+                    <If condition={this.state.tryAgain}>
+                      <span> <a href="" onClick={this.tryAgain}>Try again.</a></span>
+                    </If>
+                  </div>
+                </If>
+                <If condition={!this.state.status}>
+                  <div className="promo-newsletter__submission">
+                    <input className="promo-newsletter__submission__input u-form-text-input-thin" name="email" placeholder="email address" ref="email" type="email" />
+                    <If condition={!this.state.sending}>
+                      <button className="promo-newsletter__submission__submit u-form-input-submit-thin" type="submit"><Icon icon="arrow-right" sprite="interactive.svg" title="Subscribe"/></button>
+                    </If>
+                    <If condition={this.state.sending}>
+                      <span className="promo-newsletter__submission__spinner"><img alt="Loading..." src="/images/spinner-blue.gif" /></span>
+                    </If>
+                  </div>
+                </If>
+                { /*real people should not fill this in and expect good things - do not remove this or risk form bot signups */}
+                <div style={{position: 'absolute', left: '-5000px'}}>
+                  <input name="b_579cc4bca784b8844042fea50_7a64ff23fe" ref="filter" tabIndex="-1" type="text" />
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    );
+  }
+});
+
+module.exports = PromoNewsletter;
+              </code>
+            </pre>
+          </section>
+
+          <section>
+            <h2>Subscribing a user</h2>
+            <pre>
+              <code class="javascript">
+'use strict';
+var express = require('express');
+var path = require('path');
+var app = express();
+var bodyParser = require('body-parser');
+
+// Support for JSON-encoded bodies used in POST requests.
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({extended: true}));
+
+// ... Other routes go here ...
+
+// Newsletter form handler.
+app.use('/mailchimp-signup', function(req, res) {
+  var ServerSettings = require('./server-settings.js');
+  var Mcapi = require('mailchimp-api');
+  var mc = new Mcapi.Mailchimp(ServerSettings.mailChimp.apiKey);
+  mc.lists.subscribe({id: ServerSettings.mailChimp.listId, email: {email: req.body.email}}, function(data) {
+    res.send(data);
+  },
+  function(error) {
+    res.send(error);
+  });
+});
+              </code>
+            </pre>
+          </section>
+        </section>
+
+        <section>
+          <section>
+            <h1>Deployments</h1>
+          </section>
+
+          <section>
+            <h1>Jenkins job for back end</h1>
+            <pre>
+              <code>
+                Check out tag.
+                make (updb, fra, cc all).
+              </code>
+            </pre>
+          </section>
+
+          <section>
+            <h1>Jenkins job for front end</h1>
+            <pre>
+              <code>
+                1. Check out to release directory.
+                2. make (npm install, bower install, grunt).
+                3. Replace symlink to web root.
+                4. Restart NodeJS application.
+              </code>
+            </pre>
+          </section>
+        </section>
+
+        <section>
+          <section>
+            <h1>Next steps</h1>
+            <ul>
+              <li>Upgrade the back end to Drupal 8.</li>
+              <li>No user session. What if we need it?</li>
+              <li>No site preview. How can we let editors preview an article?</li>
+            </ul>
+          </section>
+        </section>
+        <section>
+          <h2>Useful links</h2>
+          <ul>
+            <li><a href="" target="_blank"></a></li>
+          </ul>
+        </section>
+        <section>
+          <h2>Thanks! Questions?</h2>
+          <p>
+            <img align="left" src="images/Juampy-headshot.jpg" width="200"/>
+            <img align="right" src="images/lullabot.jpg" width="200"/>
+            Juampy NR<br>
+            <br>
+            <a href="https://twitter.com/juampynr" target="_blank">@juampynr</a><br>
+            <br>
+            <a href="http://about.me/juampynr" target="_blank">about.me/juampynr</a>
+          </p>
+        </section>
+
+      </div>
+
+    </div>
+
+    <script src="lib/js/head.min.js"></script>
+    <script src="js/reveal.js"></script>
+
+    <script>
+
+      // Full list of configuration options available at:
+      // https://github.com/hakimel/reveal.js#configuration
+      Reveal.initialize({
+        controls: true,
+        progress: true,
+        history: true,
+        center: true,
+
+        transition: 'slide', // none/fade/slide/convex/concave/zoom
+
+        // Optional reveal.js plugins
+        dependencies: [
+          { src: 'lib/js/classList.js', condition: function() { return !document.body.classList; } },
+          { src: 'plugin/markdown/marked.js', condition: function() { return !!document.querySelector( '[data-markdown]' ); } },
+          { src: 'plugin/markdown/markdown.js', condition: function() { return !!document.querySelector( '[data-markdown]' ); } },
+          { src: 'plugin/highlight/highlight.js', async: true, condition: function() { return !!document.querySelector( 'pre code' ); }, callback: function() { hljs.initHighlightingOnLoad(); } },
+          { src: 'plugin/zoom-js/zoom.js', async: true },
+          { src: 'plugin/notes/notes.js', async: true }
+        ]
+      });
+
+    </script>
+
+  </body>
+</html>
