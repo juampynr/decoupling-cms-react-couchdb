@@ -60,7 +60,7 @@
         <section data-background="images/syfy-case.png">
           <div style="background-color: rgba(0, 0, 0, 0.9); color: #fff; padding: 20px;">
             <h2>The goal</h2>
-            <p>Give the design and front end teams freedom to design and structure the website without the constraints of a CMS</p>
+            <p>Give the design and front end teams freedom to craft the website without the constraints of a CMS</p>
           </div>
         </section>
 
@@ -70,9 +70,10 @@
             <ul>
               <li>Drupal serves just as a CMS.</li>
               <li>Data is exported to CouchDB on cron run.</li>
-              <li>The front end is an isomorphic application.</li>
-              <li>The front end fetches data through CouchDB's REST API.</li>
+              <li>The front end fetches data from CouchDB's REST API.</li>
               <li>Only anonymous navigation in the front end.</li>
+              <li>Only anonymous navigation in the front end.</li>
+              <li>Plus, writing the migration path.</li>
             </ul>
           </div>
         </section>
@@ -203,79 +204,31 @@ function lullabot_edit_article_lullabot_edit_exporter_node_article($node, $outpu
           </section>
 
           <section>
-            <h2>The article template</h2>
+            <h2>The article.jsx template (simplified)</h2>
             <pre>
               <code class="javascript">
+// First we have declarations and dependencies being loaded.
 'use strict';
 var React = require('react');
 var Settings = require('../../../settings');
 var Header = require('../component/header.jsx');
-var ArticleHero = require('../component/article/hero.jsx');
-var RichText = require('../component/rich-text.jsx');
-var Link = require('../link.jsx');
-var SeriesList = require('../component/series-list.jsx');
-var TopicList = require('../component/topic-list.jsx');
-var TeaserAuthor = require('../component/teaser/author.jsx');
-var Comments = require('../component/comments.jsx');
-var PouchDB = require('pouchdb');
-var LegacyMixin = require('../mixin/legacy.jsx');
-var PromoNewsletter = require('../component/promo/newsletter.jsx');
-var PromoBecomeBotYourProject = require('../component/promo/become-bot-your-project.jsx');
-var PromoRotator = require('../component/promo-rotator.jsx');
-var PromosMixin = require('../mixin/promos.jsx');
 
+// Then the component definition.
 var LayoutArticle = React.createClass({
-  mixins: [LegacyMixin, PromosMixin],
-  getSplitBody: function() {
-    // ...
-  },
-  getBackground: function() {
-    // ...
-  },
-  getTopics: function() {
-    var topics = [];
-    if (this.props.doc.topics && this.props.doc.topics.length) {
-      this.props.doc.topics.map(function(topic) {
-        topics.push({
-          title: topic.title,
-          link: topic.full_slug_flat
-        });
-      });
-    }
+  // The class may have custom methods:
+  getBackground: function() {},
+  getSeries: function() {},
 
-    return topics;
-  },
-  getSeriesData: function(callback) {
-    // ...
-  },
-  getSeries: function() {
-    // ...
-  },
-  getInitialState: function() {
-    return {
-      series: []
-    };
-  },
-  componentDidMount: function() {
-    this.getSeries();
-  },
-  propTypes: {
-    doc: React.PropTypes.object.isRequired
-  },
-  getDefaultProps: function() {
-    return {
-      doc: {}
-    };
-  },
+  // React's component lifecycle offers a few events:
+  getInitialState: function() {},
+  componentDidMount: function() {},
+
+  // The render() method returns a mix of HTML and XML that is then compiled.
   render: function() {
-    var body = this.getSplitBody();
-
-    // Get an array of active authors to display in the author teaser.
-    // We ignore the inactive authors.
     var activeAuthors = [];
     this.props.doc.authors.map(function(author) {
       if (author.active) {
-       activeAuthors.push(author);
+        activeAuthors.push(author);
       }
     });
 
@@ -283,222 +236,23 @@ var LayoutArticle = React.createClass({
       <div className="layout-article" itemScope="" itemType="http://schema.org/Article">
         <Header />
         <article className="layout-article__article">
-
           <div className="layout-article__article-hero">
-            <ArticleHero authors={this.props.doc.authors} background={this.getBackground()} date={this.props.doc.published} title={this.props.doc.title} />
+            <ArticleHero authors={this.props.doc.authors} date={this.props.doc.published} title={this.props.doc.title} />
           </div>
 
           <div className="layout-article__article-content">
-            <div className="layout-article__article-content-lead">
-              <RichText assets={this.props.doc.assets} value={body.lead} />
-            </div>
-
-            <For each="series" of={this.state.series}>
-              <SeriesList items={series.items} key={series.id} link={series.link} title={series.title} />
-            </For>
-
             <div className="layout-article__article-content-body">
               <RichText assets={this.props.doc.assets} value={body.body} />
             </div>
           </div>
-
-          <div className="u-layout-container">
-            <div className="u-layout-content-grid">
-              <If condition={this.props.doc.topics && this.props.doc.topics.length}>
-                <div className="layout-article__article-topics">
-                  <TopicList topics={this.getTopics()} />
-                </div>
-              </If>
-
-              <If condition={this.props.doc.related_links && this.props.doc.related_links.length}>
-                <div className="layout-article__article-related">
-                  If you enjoyed this article, you may also enjoy...
-                  <ul>
-                    <For each="link" of={this.props.doc.related_links}>
-                      <li key={link.url}><Link to={link.url}>{link.title}</Link></li>
-                    </For>
-                  </ul>
-                </div>
-              </If>
-
-              <If condition={activeAuthors.length}>
-                <div className="layout-article__article-authors">
-                  <For each="author" of={activeAuthors}>
-                    <TeaserAuthor active={author.active} image={author.image.uri} key={author._id} link={author.full_slug_flat} name={author.title} shortBio={author.deck} />
-                  </For>
-                </div>
-              </If>
-            </div>
-          </div>
         </article>
-
-        <div className="u-layout-container">
-          <div className="u-layout-content-grid">
-            <div className="layout-article__comments">
-              Join the conversation
-              <Comments identifier={this.legacyGetCanonicalPath()} />
-            </div>
-          </div>
-        </div>
-
-        <div className="layout-article__promos">
-          <PromoBecomeBotYourProject />
-          <PromoNewsletter />
-        </div>
-        <div className="layout-article__reveal-promos">
-          <PromoRotator promos={this.promosFromNames([
-            'bravotv',
-            'msnbc',
-            'namm',
-            'syfy'
-          ])} />
-        </div>
       </div>
     );
   }
 });
 
+// Finally, export the React component as a NodeJS module.
 module.exports = LayoutArticle;
-              </code>
-            </pre>
-          </section>
-
-          <section data-background="images/menu.png">
-            <div style="background-color: rgba(0, 0, 0, 0.9); color: #fff; padding: 20px;">
-              <h2>The navigation menu</h2>
-            </div>
-          </section>
-
-          <section>
-            <h2>The menu template</h2>
-            <pre>
-              <code class="javascript">
-'use strict';
-var React = require('react');
-var SiteName = require('./site-name.jsx');
-var Icon = require('./icon.jsx');
-var Link = require('../link.jsx');
-var SocialLinks = require('./social-links.jsx');
-var ClassesMixin = require('../mixin/classes.jsx');
-var MixinSvgClickFix = require('../mixin/svg-click-fix.jsx');
-
-var Navigation = React.createClass({
-  mixins: [ClassesMixin, MixinSvgClickFix],
-  contextTypes: {
-    router: React.PropTypes.func.isRequired
-  },
-  getNavItems: function() {
-    var navItems = [
-      {title: 'Home', link: '/'},
-      {title: 'Our Work', link: 'our-work'},
-      {title: 'Who We Are', link: 'who-we-are'},
-      {title: 'What We Do', link: 'what-we-do'},
-      {title: 'Articles', link: 'articles'}
-    ];
-
-    return navItems;
-  },
-  navToggleClick: function() {
-    this.setState({
-      open: !this.state.open
-    });
-    this.classesToggle(document.body, 'is-navigation-open');
-  },
-  getClasses: function() {
-    var classes = 'navigation__main';
-    if (this.state.open) {
-      classes += ' is-open';
-    }
-
-    return classes;
-  },
-  handleSearchSubmit: function(e) {
-    e.preventDefault();
-    this.navToggleClick();
-    var searchString = React.findDOMNode(this.refs.searchString).value;
-    this.context.router.transitionTo('/search', {}, {q: searchString});
-  },
-  propTypes: {
-    exposeSearch: React.PropTypes.bool,
-    wordmark: React.PropTypes.bool
-  },
-  getDefaultProps: function() {
-    return {
-      exposeSearch: false,
-      wordmark: false
-    };
-  },
-  getInitialState: function() {
-    return {
-      open: false,
-      showCta: false
-    };
-  },
-  componentWillUnmount: function() {
-    this.classesRemove(document.body, 'is-navigation-open');
-  },
-  render: function() {
-    return (
-      <nav className="navigation">
-        <div className="navigation__header">
-          <If condition={this.state.showCta}>
-            <div className="navigation__header__ctas">
-              <Link to="" type="cta-nav"><Icon icon="comments" sprite="interactive.svg" title="Comment" />
-  Comment</Link>
-            </div>
-          </If>
-          <If condition={this.props.exposeSearch}>
-            <form action="/search" onSubmit={this.handleSearchSubmit}>
-              <input className="u-search-input navigation__search-input" name="q" placeholder="Search" ref="searchString" type="text" />
-            </form>
-          </If>
-          <div className="navigation__branding">
-            <a href="#" onClick={this.navToggleClick} >
-              <If condition={this.props.wordmark}>
-                <SiteName />
-              </If>
-              <Icon icon="hamburger" sprite="interactive.svg" title="Open navigation" />
-            </a>
-          </div>
-        </div>
-
-        <div className={this.getClasses()}>
-          <form action="/search" onSubmit={this.handleSearchSubmit}>
-            <input className="u-search-input navigation__search-input" name="q" placeholder="Search" ref="searchString" type="text" />
-          </form>
-          <a href="#" onClick={this.navToggleClick} >
-            <Icon icon="close" sprite="interactive.svg" title="Close navigation" />
-          </a>
-          <ul className="navigation__primary-menu">
-            <For each="navItem" of={this.getNavItems()}>
-              <li className="navigation__primary-menu__item" key={navItem.title}>
-                <Link to={navItem.link}>
-                  {navItem.title}
-                </Link>
-              </li>
-            </For>
-          </ul>
-          <div className="navigation__ctas">
-            <span className="navigation__ctas__cta"><Link to="jobs">Careers</Link></span>
-            <span className="navigation__ctas__cta"><Link to="contact">Contact</Link></span>
-          </div>
-          <div className="navigation__social-links">
-            <SocialLinks />
-          </div>
-          <div className="navigation__dme-promo">
-            <span className="navigation__dme-promo__label">
-              We also created
-            </span>
-            <Link to="https://drupalize.me">Drupalize.Me<Icon icon="arrow-right" sprite="interactive.svg" title="Drupalize.Me" /></Link>
-          </div>
-        </div>
-      </nav>
-    );
-  }
-});
-
-module.exports = Navigation;
-
               </code>
             </pre>
           </section>
@@ -516,7 +270,7 @@ module.exports = Navigation;
           </section>
 
           <section>
-            <h2>Client side template</h2>
+            <h2>Contact form template</h2>
             <pre>
               <code class="javascript">
 'use strict';
@@ -524,8 +278,6 @@ var React = require('react');
 var Icon = require('./../icon.jsx');
 
 var PromoNewsletter = React.createClass({
-  propTypes: {
-  },
   getInitialState: function() {
     return {
       sending: false,
@@ -537,20 +289,9 @@ var PromoNewsletter = React.createClass({
     event.preventDefault();
     this.setState({sending: false, status: '', tryAgain: false});
   },
-  componentDidUpdate: function() {
-    // Restore previously entered email after updating state.
-    if (this.email && this.refs.email) {
-      React.findDOMNode(this.refs.email).value = this.email;
-    }
-  },
   handleSubmit: function (event) {
     event.preventDefault();
-    // Simulate Mailchimp's anti-spam filter.
-    if (React.findDOMNode(this.refs.filter).value !== '') {
-      return;
-    }
 
-    // Spam field is empty. Proceed to emN2
     this.email = React.findDOMNode(this.refs.email).value;
     if (this.email) {
       var url = '/mailchimp-signup';
@@ -582,11 +323,6 @@ var PromoNewsletter = React.createClass({
                 case 'Email_NotExists':
                 case 'List_AlreadySubscribed':
                 case 'List_InvalidImport':
-                case 'User_Disabled':
-                case 'Too_Many_Connections':
-                case 'User_UnderMaintenance':
-                case 'User_InvalidAction':
-                case 'ValidationError':
                 default:
                   _this.setState({sending: false, status: response.error, tryAgain: true});
                   break;
@@ -632,10 +368,6 @@ var PromoNewsletter = React.createClass({
                     </If>
                   </div>
                 </If>
-                { /*real people should not fill this in and expect good things - do not remove this or risk form bot signups */}
-                <div style={{position: 'absolute', left: '-5000px'}}>
-                  <input name="b_579cc4bca784b8844042fea50_7a64ff23fe" ref="filter" tabIndex="-1" type="text" />
-                </div>
               </div>
             </form>
           </div>
@@ -651,7 +383,7 @@ module.exports = PromoNewsletter;
           </section>
 
           <section>
-            <h2>Subscribing a user</h2>
+            <h2>Processing a Newsletter subscription</h2>
             <pre>
               <code class="javascript">
 'use strict';
@@ -659,10 +391,6 @@ var express = require('express');
 var path = require('path');
 var app = express();
 var bodyParser = require('body-parser');
-
-// Support for JSON-encoded bodies used in POST requests.
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({extended: true}));
 
 // ... Other routes go here ...
 
@@ -680,6 +408,11 @@ app.use('/mailchimp-signup', function(req, res) {
 });
               </code>
             </pre>
+          </section>
+        </section>
+
+        <section>
+          <section data-background="images/isomorphic.jpg" data-background-size="700px">
           </section>
         </section>
 
@@ -732,7 +465,7 @@ make
 
           <section>
             <h2>Front end deployment (2)</h2>
-            <p>Then, update symlink:</p>
+            <p>Then, update the web root's symlink:</p>
             <pre>
               <code>
 # Point webroot to the new release through a symlink.
