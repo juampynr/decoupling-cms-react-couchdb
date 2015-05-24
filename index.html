@@ -502,6 +502,11 @@ sudo service lullabot.com-www restart
           </ul>
         </section>
         <section>
+          <h2>Acknowledgements</h2>
+          <img src="images/jeff.jpg" />
+          <img src="images/sally.jpg" />
+        </section>
+        <section>
           <h2>Thanks! Questions?</h2>
           <p>
             <img align="left" src="images/Juampy-headshot.jpg" width="200"/>
@@ -543,7 +548,11 @@ sudo service lullabot.com-www restart
           { src: 'plugin/highlight/highlight.js', async: true, condition: function() { return !!document.querySelector( 'pre code' ); }, callback: function() { hljs.initHighlightingOnLoad(); } },
           { src: 'plugin/zoom-js/zoom.js', async: true },
           { src: 'plugin/notes/notes.js', async: true }
-        ]
+        ],
+        keyboard: {
+          39: 'next',
+          37: 'prev'
+        }
       });
 
     </script>
