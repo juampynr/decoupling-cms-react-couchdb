@@ -395,7 +395,7 @@ var bodyParser = require('body-parser');
 
 // Newsletter form handler.
 app.use('/mailchimp-signup', function(req, res) {
-  var ServerSettings = require('./server-settings.js');
+  var ServerSettings = require('../server-settings.js');
   var Mcapi = require('mailchimp-api');
   var mc = new Mcapi.Mailchimp(ServerSettings.mailChimp.apiKey);
   mc.lists.subscribe({id: ServerSettings.mailChimp.listId, email: {email: req.body.email}}, function(data) {
