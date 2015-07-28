@@ -42,19 +42,21 @@
         <section data-background-video="video/video.mp4" data-background-video-loop data-background-color="#000000">
           <div style="background-color: rgba(0, 0, 0, 0.7); color: #fff; padding: 20px;">
             <h2>Decoupling the CMS with React and CouchDB</h2>
-            <h3>DrupalCamp Spain 2015</h3>
-            <p>Juampy NR</p>
+            <p>Juampy NR - @juampynr</p>
           </div>
         </section>
 
         <section>
           <img align="left" src="images/Juampy-headshot.jpg" width="200"/>
           <img align="right" src="images/lullabot.jpg" width="200"/>
-          Juampy NR - <a href="https://twitter.com/juampynr" target="_blank">@juampynr</a><br>
-          <br>
-          Back end developer<br>
-          <br>
-          <a href="http://about.me/juampynr" target="_blank">about.me/juampynr</a>
+          Juampy NR - <a href="https://twitter.com/juampynr" target="_blank">@juampynr</a></br>
+          </br>
+          Senior Developer</br></br>
+          <a href="https://www.lullabot.com/who-we-are/juampy-nr" target="_blank">about.me/juampynr</a>
+          </br>
+          <div style="margin: 0px auto;padding-left: 200px;">
+            <a href="http://www.amazon.com/Drush-Developers-Juampy-Novillo-Requena-ebook/dp/B00SYOBXYG" target="_blank"><img src="images/drush_book.jpg" width="200"/></a>
+          </div>
         </section>
 
         <section data-background="images/syfy-case.png">
@@ -68,11 +70,9 @@
           <div style="background-color: rgba(0, 0, 0, 0.9); color: #fff; padding: 20px;">
             <h2>The project</h2>
             <ul>
-              <li>Drupal serves just as a CMS.</li>
-              <li>Data is exported to CouchDB on cron run.</li>
-              <li>The front end fetches data from CouchDB's REST API.</li>
-              <li>Only anonymous navigation in the front end.</li>
-              <li>Plus, writing the migration path.</li>
+              <li>Migrate existing data to a simpler Drupal installation.</li>
+              <li>Export content to CouchDB on every cron run.</li>
+              <li>Serve content from a Node.js + React application.</li>
             </ul>
           </div>
         </section>
@@ -427,7 +427,7 @@ app.use('/mailchimp-signup', function(req, res) {
 
           <section data-background="images/jenkins-build.png">
             <div style="background-color: rgba(0, 0, 0, 0.9); color: #fff; padding: 20px;">
-              <h2>How to deploy a tag</h2>
+              <h2>Deploying releases</h2>
             </div>
           </section>
 
@@ -435,19 +435,44 @@ app.use('/mailchimp-signup', function(req, res) {
             <h2>Back end deployment</h2>
             <pre>
               <code>
-# First update the old lullabot.com.
-cd /var/www/lullabot.com-legacy/docroot
-git pull
-drush -y sql-sync @www_lullabot_com @self
-drush -y -v rsync @www_lullabot_com:%files/ @self:%files --update
+echo "[TAG]: $TAG"
 
-# Then update edit.lullabot.com and run the migration.
+set -e
+error() {
+  echo "Error detected: $@" 1>&2
+  exit 1
+}
+
+DRUSH=drush
+
+# Set up the destination for the backup.
 cd /var/www/edit.lullabot.com
-git fetch
-git checkout $GIT_TAG
-make
-make migrateify
-echo $GIT_TAG > docroot/version.txt
+OLD_TAG=`git describe --always --tag`
+FILE=`date "+%Y-%m-%d-%H%M-$OLD_TAG.sql.gz"`
+BACKUP_DIR="$HOME/drush-backups/pulls/edit.lullabot.com"
+mkdir -p $BACKUP_DIR
+BACKUP_FILE="$BACKUP_DIR/$FILE"
+RESTORE_MSG="If problems were found, the database was saved to $BACKUP_FILE."
+
+# Save a database backup.
+cd docroot
+eval "$DRUSH sql-dump | gzip > $BACKUP_FILE" &&
+
+## Checkout the Git tag and update the database.
+eval cd `eval $DRUSH dd` &&
+eval git fetch origin &&
+eval git checkout $TAG &&
+eval $DRUSH -v updatepath ||
+# If we end up here, there was a problem.
+error "$RESTORE_MSG"
+echo "$RESTORE_MSG"
+
+echo "Cleaning up old dumps."
+# Delete all but 4 most recent backups.
+for x in `ls -tr $BACKUP_DIR | head -n -4`; do rm -v $BACKUP_DIR/$x; done
+
+# Update the version number.
+echo $TAG > version.txt
               </code>
             </pre>
           </section>
@@ -457,10 +482,18 @@ echo $GIT_TAG > docroot/version.txt
             <p>First, install dependencies:</p>
             <pre>
               <code>
-# Checks out the repository to a numbered directory. Then builds the project dependencies.
-mv $WORKSPACE/release $WORKSPACE/$BUILD_NUMBER
-cd $WORKSPACE/$BUILD_NUMBER
-make
+echo "[TAG]: $GIT_TAG"
+
+# Checks out the repository to a numbered directory.
+mv $WORKSPACE/release /var/www/www.lullabot.com-releases/$BUILD_NUMBER
+cd /var/www/www.lullabot.com-releases/$BUILD_NUMBER
+
+# Copy .env settings.
+cp /var/www/www.lullabot.com/.env .
+
+# Build project dependencies and assets.
+npm run update
+npm run build
               </code>
             </pre>
           </section>
@@ -496,9 +529,10 @@ sudo service lullabot.com-www restart
         <section>
           <h2>Useful links</h2>
           <ul>
-            <li><a href="https://facebook.github.io/react/" target="_blank">React Docs</a></li>
+            <li><a href="https://facebook.github.io/react" target="_blank">React Docs</a></li>
+            <li><a href="http://expressjs.com" target="_blank">Express</a></li>
             <li><a href="http://docs.couchdb.org/en/1.6.1/" target="_blank">CouchDB Docs</a></li>
-            <li><a href="http://isomorphic.net" target="_blank">Isomorphic libraries</a></li>
+            <li><a href="https://www.lullabot.com/articles/what-is-an-isomorphic-application" target="_blank">What is an isomorphic application?</a> - <a href="https://www.youtube.com/watch?v=AwJhDVMml5o" target="_blank">video</a></li>
           </ul>
         </section>
         <section>
